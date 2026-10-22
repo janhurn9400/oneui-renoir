@@ -1,0 +1,6 @@
+# oneui-renoir: /data directories a Samsung vendor creates. Samsung Core Services (an app) creates
+# /data/sec/geodb itself and crashed with AccessDeniedException without it (boots 14/15). Labels come from
+# Samsung's file_contexts (/data/sec -> sec_data_file).
+on post-fs-data
+    mkdir /data/sec 0775 system system
+    mkdir /data/sec/geodb 0777 system system

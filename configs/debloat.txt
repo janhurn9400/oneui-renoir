@@ -1,0 +1,110 @@
+# Apps removed from Samsung's system/product/system_ext (directory names under app/ or priv-app/).
+# Basis: what the Mystic One UI 8 GSI (lisa port) removed and still booted with; minus the NFC apps
+# (renoir has NFC, we try it) and the German Samsung TTS voice.
+# Needs Samsung camera HAL / camera hardware
+SamsungCamera
+FactoryCameraFB
+SingleTakeService
+SCameraSDKService
+sec_camerax_service
+CameraExtensionsProxy
+AREmoji
+StickerFaceARAvatar
+StickerCenter
+ARCore
+DualOutFocusViewer_V
+# Samsung DSP / sensors / hardware not on renoir
+BixbyWakeup
+HMT
+EarphoneTypeC
+# Knox / eSE / Samsung Pay / car key (Knox is tripped, no Samsung eSE)
+SamsungPass
+PaymentFramework
+DigitalKey
+SamsungCarKeyFw
+BlockchainBasicKit
+KPECore
+UniversalMDMClient
+MDMApp
+# Samsung OTA / diagnostics / factory tools (no Samsung firmware to update or test)
+FotaAgent
+SOAgent77
+SDMConfig
+SEMFactoryApp
+serviceModeApp_FB
+PhoneErrService
+SilentLog
+ImsLogger
+DRParser
+DeviceKeystring
+NetworkDiagnostic
+SsuService
+HdmApk
+MoccaMobile
+OMCAgent5
+SmartEpdgTestApp
+# Qualcomm system services built for Samsung's vendor
+com.qualcomm.location
+com.qualcomm.qti.services.systemhelper
+# Bixby / Samsung assistant features
+Bixby
+BixbyInterpreter
+BixbyVisionFramework3.5
+VisionIntelligence3.7
+SamsungSmartSuggestions
+StoryService
+OCRDataProvider
+HashTagService
+BardShell
+# Optional Samsung apps (Galaxy Store / Play Store)
+BudsUniteManager
+GearManagerStub
+OneDrive_Samsung_v3
+YourPhone_P1_5
+LinkToWindowsService
+SamsungOne
+SamsungBilling
+SamsungExperienceService
+SamsungDeviceHealthManagerService
+KidsHome_Installer
+ParentalCare
+FamilyLinkParentalControls
+EmergencySOS
+SafetyInformation
+MessageGuardSync
+HiyaService
+PeopleStripe
+AutoHotspotMDE
+UnifiedTetheringProvision
+HandwritingService
+AndroidGlassesCore
+AndroidDeveloperVerifier
+VirtualDeviceManager
+FBServices
+Tag
+# Google apps the user can install from the Play Store
+Velvet
+YouTube
+Gmail2
+Maps
+Messages
+SpeechServicesByGoogle
+DuoStub
+EuiccGoogle
+GoogleLpaOverlay
+LocalTransport
+# Samsung TTS voices (Google TTS from the Play Store instead); German stays
+SamsungTTSVoice_ar_AE_m00
+SamsungTTSVoice_en_US_l03
+SamsungTTSVoice_es_ES_f00
+SamsungTTSVoice_es_MX_f00
+SamsungTTSVoice_es_US_f00
+SamsungTTSVoice_fr_FR_f00
+SamsungTTSVoice_hi_IN_f00
+SamsungTTSVoice_id_ID_f00
+SamsungTTSVoice_it_IT_f00
+SamsungTTSVoice_pl_PL_f00
+SamsungTTSVoice_pt_BR_f00
+SamsungTTSVoice_ru_RU_f00
+SamsungTTSVoice_th_TH_f00
+SamsungTTSVoice_vi_VN_f00

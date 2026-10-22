@@ -7,7 +7,10 @@ writing the full super image. Samsung firmware ships super.img (sparse) lz4-comp
 The liblp metadata sits in the first MiBs of the image; once that part has streamed by, the partition table
 (slot 0) is parsed and every later chunk is written straight into the wanted partition images (holes = zeros).
 Names match with or without the _a suffix. Prints the partition table.
+With --sha256 instead of OUTDIR nothing is written: prints "sha256 name" per wanted partition (to verify a
+super we built, e.g. against sha256sum of the input images).
 """
+import hashlib
 import os
 import struct
 import sys
@@ -82,11 +85,54 @@ class Writer:
             f.close()
 
 
+class Hasher(Writer):
+    """Same selection as Writer, but hashes each partition in order instead of writing it."""
+
+    def __init__(self, wanted, parts):
+        self.targets = []
+        for name, (runs, size) in sorted(parts.items()):
+            base = name[:-2] if name.endswith("_a") else name
+            if size and (name in wanted or base in wanted):
+                self.targets.append(([hashlib.sha256(), 0, size, base], runs))
+                wanted.discard(name); wanted.discard(base)
+        if wanted:
+            raise SystemExit(f"not found or empty: {sorted(wanted)}")
+
+    def _feed(self, off, length, data):
+        end = off + length
+        for t, runs in self.targets:
+            for soff, rlen, poff in runs:
+                lo, hi = max(off, soff), min(end, soff + rlen)
+                if lo < hi:
+                    p = poff + lo - soff
+                    assert p >= t[1], f"{t[3]}: data out of order"
+                    self._pad(t, p)
+                    t[0].update(data[lo - off:hi - off] if data is not None else bytes(hi - lo))
+                    t[1] = p + hi - lo
+
+    @staticmethod
+    def _pad(t, upto):
+        while t[1] < upto:
+            n = min(upto - t[1], 8 << 20)
+            t[0].update(bytes(n)); t[1] += n
+
+    def write(self, off, data):
+        self._feed(off, len(data), data)
+
+    def close(self):
+        for t, _ in self.targets:
+            self._pad(t, t[2])
+            print(f"{t[0].hexdigest()}  {t[3]}")
+
+
 def main():
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
     outdir, wanted = sys.argv[1], set(sys.argv[2:])
-    os.makedirs(outdir, exist_ok=True)
+    hashing = outdir == "--sha256"
+    if not hashing:
+        os.makedirs(outdir, exist_ok=True)
+    make = (lambda parts: Hasher(wanted, parts)) if hashing else (lambda parts: Writer(outdir, wanted, parts))
     src = sys.stdin.buffer
     magic, _, _, fhs, chs, bs, tblks, tchunks, _ = struct.unpack("<IHHHHIIII", read_exact(src, 28))
     assert magic == SPARSE_MAGIC, "input is not an Android sparse image"
@@ -115,7 +161,7 @@ def main():
                 pre = len(first)
             else:
                 pre = 0
-            writer = Writer(outdir, wanted, parse_lp(bytes(head)))
+            writer = make(parse_lp(bytes(head)))
             writer.write(0, bytes(head))
         else:
             pre = 0
@@ -139,7 +185,7 @@ def main():
             raise SystemExit(f"unknown chunk type {ctype:#x}")
         off += size
     if writer is None:
-        writer = Writer(outdir, wanted, parse_lp(bytes(head)))
+        writer = make(parse_lp(bytes(head)))
         writer.write(0, bytes(head))
     writer.close()
     print("done")

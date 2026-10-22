@@ -12,7 +12,7 @@ Studied read-only in the VM (`/mnt/oui_sys`, `/mnt/oui_ven`, `/mnt/oui_odm`), fr
 | part | content |
 |---|---|
 | `system_a.img` | ext4, 6.9 GB used (100 % full). Galaxy S23 **SM-S911B**, `S911BXXU8ZYHB`, One UI 8.0 (`ro.build.version.oneui=80000`), SDK 36, patch 2025-09. "Mystic GSI": system-as-root GSI on **phh-treble**, `system_ext` + `product` merged into `/system`. |
-| `vendor_a.img` / `odm_a.img` | erofs, lisa **stock** HyperOS vendor (Android 13 vendor, API 30, sepolicy 30.0, also `fpc1540` + `mfp-daemon` like renoir). odm only 550 KB. No visible One UI–specific vendor changes. |
+| `vendor_a.img` / `odm_a.img` | erofs, lisa **stock** HyperOS vendor (Android 13 vendor, API 30, sepolicy 30.0, also `fpc1540` + `mfp-daemon` like renoir). odm only 550 KB. Correction (boot 10): Mystic added `etc/audio_effects_sec.xml` + `etc/audio_policy_configuration_sec.xml` (Samsung's audioserver reads only those) and `persist.sys.phh.disable_a2dp_offload=true` to build.prop; everything else is Xiaomi's. |
 | `boot.img` / `vendor_boot.img` | lisa stock kernel 5.4.289-qgki (Xiaomi build). No custom kernel. |
 | install | `windows_install_and_format_data.bat` / `updater-script`: full lisa firmware + boot/vendor_boot + one `super.img`, then erase metadata+userdata. |
 
@@ -109,7 +109,7 @@ Optional later: AOSP `com.android.vndk.v30.apex` only if the official system lac
 phh-treble sources for reading (git, few MB).
 
 ## 5b. Downloaded (2026-10-21)
-- Firmware `SM-S911B_5_20260909105150_9x31s5f5m2_fac.zip` (15,971,074,225 B, EUX/OXM, PDA `S911BXXSAFZI1`)
+- (superseded by 5d: rebased on One UI 8.0) Firmware `SM-S911B_5_20260909105150_9x31s5f5m2_fac.zip` (15,971,074,225 B, EUX/OXM, PDA `S911BXXSAFZI1`)
   via samloader-rs from Samsung FUS. AP `..._meta_OS16.tar.md5` (17.5 GB) holds `super.img.lz4` (10 GB, sparse
   11.42 GiB). Streamed with `scripts/extract_firmware.sh`; zip deleted afterwards.
 - Result in `work/fw/` (erofs, Samsung's lz4): `system.img` 7,647,588,352 B, `product.img` 1,469,267,968 B,
@@ -121,6 +121,65 @@ phh-treble sources for reading (git, few MB).
 - Super budget: 9,298 MB needed vs ≈7,480 MB free in the group → **≈1.8 GB over**. Next: try lz4hc/lzma
   recompression (system content is 8.9 GB uncompressed, Samsung's image only ~18 % smaller) + debloat list.
 - Other partitions in Samsung's super (not extracted): vendor 1847 MiB, vendor_dlkm 31 MiB, odm, system_dlkm.
+
+## 5c. First DEBUG build (2026-10-21)
+- Mystic's `framework.jar` change is confined to `classes4.dex`; no new strings/props versus Samsung's code
+  (string-table diff shows only 8.0→8.5 noise) → not reproducible without Samsung's original 8.0 jar, ignored
+  until a framework problem shows up.
+- Debloat (`configs/debloat.txt`, 98 app dirs) = Mystic's removals minus NFC apps and the German TTS voice.
+- VNDK v30 apex from Nothing OS 4.1's system_ext (AOSP prebuilt) → our system_ext/apex.
+- SELinux: Samsung's system_ext mapping 30.0 references 234 Samsung-only `*_30_0` attributes → pre-declared by
+  `fix_sepolicy.sh`; policy compiles like init does.
+- Images (erofs lz4hc,12): system 5,083,787,264 · system_ext 208,826,368 · product 581,656,576 ·
+  vendor 1,531,457,536 · odm 143,360 → super 6.90 GiB used of 8.50 GiB (group budget 9,073,118,412 B, 1.67 GB spare).
+  `work/out/super.img` (sparse, 7.4 GB) verified by sha256 per partition.
+
+## 5d. Boot attempts with One UI 8.5 (2026-10-21) → switched to One UI 8.0
+Logs from `/sys/fs/pstore/console-ramoops-0` via TWRP RAM boot (`work/logs/boot*`). The phone never brings up
+USB/adb before init reaches `on boot`, so TWRP is the way to read failed boots.
+1. Kernel panic in init: `SetupMountNamespaces` denied `mounton /` (`unlabeled`). Cause: overlayfs merged root =
+   upper dir without the image root's owner/mode/label. Fixed in `assemble_oui.sh` (+ check includes roots).
+2. Stuck on the Mi logo: Samsung init waits for `security.fbe.global_de`, which Samsung's vold may not set here
+   (`security.*` → `exported_system_prop` from system_ext; a Samsung vendor labels/allows it). Fixed with vendor
+   CIL rules for vold (also `system_prop` for `sys.is_vold_shutdown`, generic netlink socket). The DEBUG
+   `write /sys/fs/selinux/enforce 0` fails under Samsung's policy (open denied, no avc) → debug builds stay
+   enforcing for now; fixes must be real policy rules anyway.
+3. Reboot loop `reboot,bpfloader-failed`: `NetBpfLoad: Android 25Q4 requires kernel 5.10.` One UI 8.5 is Android
+   16 QPR2 (`api 36/3610`); renoir runs kernel 5.4. The tethering APEX is byte-identical to Nothing OS 4.1's —
+   the platform level triggers the check. Mystic's base (One UI 8.0, Android 16 QPR0) avoids it.
+   **Decision: rebase on official One UI 8.0, `S911BXXS9EZCI` (EUX/OXM, 2026-03).** Patching/re-signing the
+   tethering APEX for 8.5 stays an option for later (LineageOS runs QPR2 on 5.4 with source patches).
+
+## 5e. Boot 10/11: One UI 8.0 reaches the setup wizard (2026-10-22)
+Read live via adb (avc denials are not in Samsung's logcat and dmesg needs root, so SELinux causes are inferred):
+- "internal problem" dialog = `Build.isBuildConsistent()` → on treble `VintfObject.verifyBuildAtBoot()`, not the
+  fingerprint: framework manifest declares vendor-ndk 33 only, renoir's device matrix needs 30. Fix: framework
+  manifest fragment for vendor-ndk 30 in system_ext.
+- audioserver abort `AudioPolicyEffects: Failed to load XML effect configuration`: Samsung's libeffectsconfig only
+  looks for `audio_effects_sec.xml`; libaudiopolicycomponents only for `audio_policy_configuration_sec.xml`
+  ("file name is empty" → speaker-only fallback). Fix: renoir's files installed under those names.
+- SystemUI loop `Unable to open socket for UEventObserver` (platform_app) → vendor rule for the uevent socket.
+- com.sec.imsservice: setting `ril.twwan911Timer` (radio_prop) denied for system_app → vendor rule.
+- Samsung apps with OEM uids (cmh 5004, scloud/scpm 5009, rubin 5010): no seapp_contexts match → zygote abort.
+  Mystic has the same gap. Fix: `user=oem_* seinfo=platform domain=system_app` in system_ext_seapp_contexts.
+- Left for later: dumpstate aborts on `/data/log` (only runs after crashes), themecenter DB crash, phh's
+  a2dp-offload switch (check when testing Bluetooth audio).
+
+## 5f. Fingerprint, status bar, store, audio (2026-10-22)
+- Fingerprint: Samsung's service binds `ISehBiometricsFingerprint` unless the floating feature
+  `SEC_FLOATING_FEATURE_COMMON_CONFIG_DEVICE_MANUFACTURING_TYPE` contains `jdm` -> set to `jdm` (+ sensor type `side`).
+  Then Samsung's HIDL stub always sends enroll timeout 0 ("no limit" for Samsung HALs); renoir's FPC HAL waits
+  0 ms -> FPC_ERROR_TIMEDOUT. Fix: own LD_PRELOAD shim for mfp-daemon (`shims/fpc_timeout`, built with NDK r27c by
+  `shims/build.sh`): fpc_enroll timeout 0 -> 60 s (needs `noatsecure` for init -> vendor_mfp-daemon). Enrolment
+  works; Samsung's UI shows odd progress (FPC reports 26 steps as "remaining", Samsung expects a larger scale).
+- Samsung reads only `*_sec.xml` audio configs; 16-bit primary/deep-buffer outputs (distortion).
+- Status bar: own SystemUI overlay (`overlays/SystemUIOverlayOneUIRenoir`, `tools/build_overlays.sh`) moves the
+  clock right of the top-left punch hole; S23 framework overlay patched (`tools/patch_s23_rro.sh`) without
+  cutout/status bar sizes (removing it entirely crashes system_server on the brightness map).
+- USB: Samsung's `sec_charging(,adb)` functions handled in `configs/init/oneui-renoir-usb.rc`.
+- Open: brightness (Samsung ignores displayconfig files, uses S23 config.xml arrays + lights HAL), vibration,
+  Samsung Core Services `/data/sec/geodb` (an init mkdir on /data/sec sent the phone to recovery: don't),
+  Galaxy Store 2300:1004 (server side; test with SIM), proximity sensor missing.
 
 ## 6. Repo layout (so far)
 - `tools/` — copied from nothing-renoir: `lpmake.py`, `lpunpack.py`, `avb_footer.py`, `vendorboot_fstab.py`,

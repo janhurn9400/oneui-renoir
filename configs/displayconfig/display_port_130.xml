@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- nothing-renoir: DisplayDeviceConfig for renoir's internal panel (physical port 130).
+     canSetBrightnessViaHwc: send brightness as a float through SurfaceFlinger/HWC (like MIUI did). The legacy
+     lights path (android.hardware.lights-service.qti + lights.qcom.so) delivers lights_value * 257 truncated to
+     the panel's 11 bits, so the slider is non-monotonic and auto brightness flickers.
+     Nits are approximate for the 2047-step OLED panel (LineageOS used 4.5..1000 nits incl. HBM). -->
+<displayConfiguration>
+    <name>renoir</name>
+    <screenBrightnessMap>
+        <point>
+            <value>0.0</value>
+            <nits>2.0</nits>
+        </point>
+        <point>
+            <value>1.0</value>
+            <nits>500.0</nits>
+        </point>
+    </screenBrightnessMap>
+    <quirks>
+        <quirk>canSetBrightnessViaHwc</quirk>
+    </quirks>
+</displayConfiguration>

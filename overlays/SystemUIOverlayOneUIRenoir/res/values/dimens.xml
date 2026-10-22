@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- punch hole: x 67-131 px = 24-48 dp at density 440. status_bar_padding_start alone had no effect on
+         Samsung's clock (boot 15), so also Samsung's clock start paddings. -->
+    <dimen name="status_bar_padding_start">52dp</dimen>
+    <dimen name="status_bar_left_clock_starting_padding">30dp</dimen>
+    <dimen name="status_bar_clock_starting_padding">30dp</dimen>
+</resources>

@@ -7,7 +7,12 @@ one linear extent, packed from the first logical sector with the block device al
 without an image stay empty (0 extents). Checksums are recomputed; all metadata slots (primary + backup)
 get the same metadata, like lpmake does for a factory image.
 
-Usage: lpmake.py TEMPLATE_HEAD OUT_RAW name_a=image.img [name_a=image.img ...]
+Usage: lpmake.py [--sparse] [--only=a,b] [--layout=FILE] TEMPLATE_HEAD OUT name_a=image.img [...]
+--sparse writes an Android sparse image straight away (no raw super on disk; gaps become DONT_CARE chunks).
+--only=product_a,... (implies --sparse) writes the metadata and only those partitions; everything else is
+  DONT_CARE, so flashing it leaves the other partitions on the device untouched ("delta super"). Only valid when
+  every other partition keeps the start/size it has on the device (compare the --layout files).
+--layout=FILE writes "name start size" per partition with data.
 """
 import hashlib
 import os
@@ -35,12 +40,58 @@ def parse(head):
                 hdr=bytes(hdr[:hsize]), hsize=hsize, tables=tables, descs=descs)
 
 
+def write_sparse(out_path, dev_size, segments, blk=4096, chunk=64 << 20):
+    """segments: sorted, non-overlapping (offset, bytes-or-path, length); offsets/lengths block aligned."""
+    plan, pos = [], 0
+    for off, src, length in segments:
+        assert off % blk == 0 and off >= pos
+        if off > pos:
+            plan.append(("skip", pos, off - pos, None))
+        for o in range(0, length, chunk):
+            plan.append(("raw", off + o, min(chunk, length - o), (src, o)))
+        pos = off + length
+    if pos < dev_size:
+        plan.append(("skip", pos, dev_size - pos, None))
+    assert dev_size % blk == 0
+    with open(out_path, "wb") as f:
+        f.write(struct.pack("<IHHHHIIII", 0xED26FF3A, 1, 0, 28, 12, blk, dev_size // blk, len(plan), 0))
+        opened = {}
+        for kind, off, length, ref in plan:
+            if kind == "skip":
+                f.write(struct.pack("<HHII", 0xCAC3, 0, length // blk, 12))
+                continue
+            src, o = ref
+            if isinstance(src, (bytes, bytearray)):
+                data = bytes(src[o:o + length])
+            else:
+                fh = opened.get(src) or opened.setdefault(src, open(src, "rb"))
+                fh.seek(o)
+                data = fh.read(length)
+            data = data.ljust(length, b"\0")      # last block of an image: zero padding
+            f.write(struct.pack("<HHII", 0xCAC1, 0, length // blk, 12 + length))
+            f.write(data)
+        for fh in opened.values():
+            fh.close()
+
+
 def main():
-    if len(sys.argv) < 4:
+    args = sys.argv[1:]
+    sparse, only, layout_file = False, None, None
+    while args and args[0].startswith("--"):
+        a = args.pop(0)
+        if a == "--sparse":
+            sparse = True
+        elif a.startswith("--only="):
+            only, sparse = set(a[7:].split(",")), True
+        elif a.startswith("--layout="):
+            layout_file = a[9:]
+        else:
+            raise SystemExit(f"unknown option {a}")
+    if len(args) < 3:
         raise SystemExit(__doc__)
-    tpl = parse(open(sys.argv[1], "rb").read(1 << 22))
-    out_path = sys.argv[2]
-    images = dict(a.split("=", 1) for a in sys.argv[3:])
+    tpl = parse(open(args[0], "rb").read(1 << 22))
+    out_path = args[1]
+    images = dict(a.split("=", 1) for a in args[2:])
     (po, pn, ps), (eo, en, es), (go, gn, gs), (bo, bn, bs) = tpl["descs"]
     t = tpl["tables"]
     assert bn == 1, "single block device expected"
@@ -101,26 +152,42 @@ def main():
     geo[8:40] = b"\0" * 32
     geo[8:40] = hashlib.sha256(bytes(geo)).digest()
 
-    with open(out_path, "wb") as f:
-        f.truncate(dev_size)  # sparse file: unwritten areas read as zeros
-        for o in (GEO_OFF, GEO_OFF + GEO_SIZE):
-            f.seek(o)
-            f.write(bytes(geo).ljust(GEO_SIZE, b"\0"))
-        base = GEO_OFF + 2 * GEO_SIZE
-        for slot in range(tpl["slots"]):
-            for o in (base + slot * tpl["max_size"],
-                      base + tpl["slots"] * tpl["max_size"] + slot * tpl["max_size"]):
-                f.seek(o)
-                f.write(metadata.ljust(tpl["max_size"], b"\0"))
-        for name, start, size, path in layout:
-            f.seek(start)
-            with open(path, "rb") as src:
-                while True:
-                    chunk = src.read(64 << 20)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-            print(f"{name:<14} @ {start / 2**20:9.1f} MiB  {size / 2**20:8.1f} MiB  <- {os.path.basename(path)}")
+    # Head: reserved 4 KiB | geometry | backup geometry | primary slots | backup slots
+    base = GEO_OFF + 2 * GEO_SIZE
+    head = bytearray(base + 2 * tpl["slots"] * tpl["max_size"])
+    for o in (GEO_OFF, GEO_OFF + GEO_SIZE):
+        head[o:o + len(geo)] = geo
+    for slot in range(tpl["slots"]):
+        for o in (base + slot * tpl["max_size"], base + (tpl["slots"] + slot) * tpl["max_size"]):
+            head[o:o + len(metadata)] = metadata
+    head = bytes(head).ljust((len(head) + 4095) // 4096 * 4096, b"\0")
+    assert len(head) <= first_sector * SECTOR
+    for name, start, size, path in layout:
+        print(f"{name:<14} @ {start / 2**20:9.1f} MiB  {size / 2**20:8.1f} MiB  <- {os.path.basename(path)}")
+    if layout_file:
+        with open(layout_file, "w") as lf:
+            for name, start, size, _ in layout:
+                lf.write(f"{name} {start} {size}\n")
+    if only is not None:
+        unknown = only - {n for n, _, _, _ in layout}
+        if unknown:
+            raise SystemExit(f"--only: no image for {sorted(unknown)}")
+        layout = [l for l in layout if l[0] in only]
+        print(f"delta: metadata + {', '.join(sorted(only))}")
+    if sparse:
+        write_sparse(out_path, dev_size, [(0, head, len(head))] + [(st, p, sz) for _, st, sz, p in layout])
+    else:
+        with open(out_path, "wb") as f:
+            f.truncate(dev_size)  # sparse file: unwritten areas read as zeros
+            f.write(head)
+            for name, start, size, path in layout:
+                f.seek(start)
+                with open(path, "rb") as src:
+                    while True:
+                        chunk = src.read(64 << 20)
+                        if not chunk:
+                            break
+                        f.write(chunk)
     print(f"used {pos / 2**30:.2f} GiB of {dev_size / 2**30:.2f} GiB")
 
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- oneui-renoir: Samsung's SystemUI does not inset the status bar for renoir's top-left punch hole (the clock sat
+     under the camera, boot 14). Static vendor overlay, built by tools/build_overlays.sh. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.android.systemui.overlay.oneuirenoir">
+    <overlay android:targetPackage="com.android.systemui" android:isStatic="true" android:priority="10" />
+</manifest>

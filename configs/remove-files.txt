@@ -1,0 +1,13 @@
+# Files removed from Samsung's partitions (paths relative to the partition root: system/ is system-as-root,
+# so Samsung's /system/bin is system/system/bin). Found by diffing official One UI 8.0 against the working
+# Mystic GSI (work/mystic-removed.txt), each confirmed by our own boot logs where noted.
+#
+# Samsung Fabric Key crypto daemon: aborts with "Check failed: fKeymaster ... Not found Fkeymaster service"
+# (needs Samsung's keymaster). Its VINTF manifest declares the service, so clients wait for it (boot 4: system_server
+# restarted ~35 times behind the Samsung boot animation, then black screen).
+system/system/bin/fabric_crypto
+system/system/etc/init/fabric_crypto.rc
+system/system/etc/vintf/manifest/fabric_crypto_manifest.xml
+# system_other preopt copy (no system_other partition here) and recovery log persistence; Mystic drops both
+system/system/etc/init/cppreopts.rc
+system/system/etc/init/recovery-persist.rc
