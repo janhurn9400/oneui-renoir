@@ -14,3 +14,6 @@ echo "built work/input/btaudio_alias"
 "$CC" -shared -fPIC -O2 -Wall -Werror -D_FORTIFY_SOURCE=0 -o "$ROOT/work/input/liblights_scale_shim.so" \
   "$ROOT/shims/lights_scale/lights_scale_shim.c" -ldl -llog
 echo "built work/input/liblights_scale_shim.so"
+"${CC/android30-clang/android31-clang}" -O2 -Wall -Werror -o "$ROOT/work/input/vibrator_proxy" \
+  "$ROOT/shims/vibrator_proxy/vibrator_proxy.c" -L"$ROOT/work/input/stubs" -lbinder_ndk -llog
+echo "built work/input/vibrator_proxy"

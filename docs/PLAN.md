@@ -183,7 +183,10 @@ Read live via adb (avc denials are not in Samsung's logcat and dmesg needs root,
   property_get report "samsung" inside the lights HAL only -> AOSP path, panel (level+1)*8-1. S23 brightness tables
   and config_screenBrightnessExtendedMaximum (612 -> max 2.4) removed; own 0..255 / 2..500 nits table.
 - Bluetooth audio: TrebleDroid sysbta + shims/btaudio_alias (Samsung's stack only looks for ".../default").
-- Open: vibration,
+- Vibration (2026-10-23): shims/vibrator_proxy registers IVibrator/default as a pass-through to Xiaomi's
+  IVibrator/vibratorfeature with a minimal vendor.samsung ISehVibrator (V5) extension answering "unsupported"
+  (Samsung's AidlHalWrapper dereferences that extension unchecked). Domain hal_vibrator_proxy permissive for now.
+- Open:
   Samsung Core Services `/data/sec/geodb` (an init mkdir on /data/sec sent the phone to recovery: don't),
   Galaxy Store 2300:1004 (server side; test with SIM), proximity sensor missing.
 

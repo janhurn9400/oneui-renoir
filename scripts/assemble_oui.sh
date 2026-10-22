@@ -146,6 +146,30 @@ label system_file $S/system/etc/init/oneui-renoir-btaudio.rc $S/system/etc/vintf
 echo 'android.hardware.bluetooth.audio.IBluetoothAudioProviderFactory/sysbta u:object_r:hal_audio_service:s0' \
   >> $SE/etc/selinux/system_ext_service_contexts
 
+echo "== system: vibrator proxy (shims/vibrator_proxy): IVibrator/default -> Xiaomi's vibratorfeature + ISehVibrator stub"
+# One UI only uses IVibrator/default and needs the Samsung ISehVibrator extension on it (boot 5: SIGSEGV in
+# AidlHalWrapper::supportsHapticEngine with Xiaomi's HAL registered as default). See the source for details.
+[ -f $P/work/input/vibrator_proxy ] || { echo "run shims/build.sh first"; exit 1; }
+install -m 0755 $P/work/input/vibrator_proxy $S/system/bin/hw/vibrator_proxy
+chown 0:2000 $S/system/bin/hw/vibrator_proxy
+label hal_vibrator_proxy_exec $S/system/bin/hw/vibrator_proxy
+cat > $S/system/etc/init/oneui-renoir-vibrator.rc <<'RC'
+service system.vibrator-proxy /system/bin/hw/vibrator_proxy
+    class hal
+    user system
+    group system
+RC
+cat > $S/system/etc/vintf/manifest/oneui-renoir-vibrator.xml <<'XML'
+<manifest version="1.0" type="framework">
+    <hal format="aidl">
+        <name>android.hardware.vibrator</name>
+        <fqname>IVibrator/default</fqname>
+    </hal>
+</manifest>
+XML
+chmod 0644 $S/system/etc/init/oneui-renoir-vibrator.rc $S/system/etc/vintf/manifest/oneui-renoir-vibrator.xml
+label system_file $S/system/etc/init/oneui-renoir-vibrator.rc $S/system/etc/vintf/manifest/oneui-renoir-vibrator.xml
+
 echo "== system_ext: selinux domain for Samsung apps with OEM uids (5000-5999)"
 # A Samsung vendor maps these uids (com.samsung.cmh 5004, scloud/scpm 5009, rubin 5010); without an entry zygote
 # aborts: "seapp_context_lookup: No match for app with uid 5004 ... username oem_5004" (boot 10). Run them like the
@@ -449,6 +473,26 @@ cat >> $V/etc/selinux/vendor_sepolicy.cil <<'CIL'
 (allow hal_audio_sysbta hal_audio_sysbta_exec (file (read getattr map execute open entrypoint)))
 (typetransition init hal_audio_sysbta_exec process hal_audio_sysbta)
 (typepermissive hal_audio_sysbta)
+;; vibrator proxy (shims/vibrator_proxy): serves IVibrator/default, uses Xiaomi's IVibrator/vibratorfeature.
+;; Permissive for now (debug builds), like sysbta.
+(type hal_vibrator_proxy)
+(roletype r hal_vibrator_proxy)
+(typeattributeset domain (hal_vibrator_proxy))
+(typeattributeset coredomain (hal_vibrator_proxy))
+(typeattributeset hal_vibrator_server (hal_vibrator_proxy))
+(typeattributeset hal_vibrator_client (hal_vibrator_proxy))
+(typeattributeset halserverdomain (hal_vibrator_proxy))
+(typeattributeset halclientdomain (hal_vibrator_proxy))
+(type hal_vibrator_proxy_exec)
+(roletype object_r hal_vibrator_proxy_exec)
+(typeattributeset exec_type (hal_vibrator_proxy_exec))
+(typeattributeset system_file_type (hal_vibrator_proxy_exec))
+(typeattributeset file_type (hal_vibrator_proxy_exec))
+(allow init hal_vibrator_proxy_exec (file (read getattr map execute open)))
+(allow init hal_vibrator_proxy (process (transition siginh rlimitinh noatsecure)))
+(allow hal_vibrator_proxy hal_vibrator_proxy_exec (file (read getattr map execute open entrypoint)))
+(typetransition init hal_vibrator_proxy_exec process hal_vibrator_proxy)
+(typepermissive hal_vibrator_proxy)
 CIL
 
 echo "== odm: the edited vendor policy must be compiled on boot -> drop the precompiled one"
