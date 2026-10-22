@@ -282,8 +282,9 @@ s = s.replace(a, a + '    setenv LD_PRELOAD /vendor/lib64/libfpc_timeout_shim.so
 with open(p, 'r+') as f: f.write(s); f.truncate()
 PY
 
-echo "== brightness: rescale shim preloaded into the lights HAL (shims/lights_scale, built by shims/build.sh)"
-# Backlight values reached the panel as (level * 257) & 0x7ff: zig-zag brightness, black at the low end (boot 21).
+echo "== brightness: lights HAL shim (shims/lights_scale, built by shims/build.sh)"
+# lights.qcom.so takes the MIUI backlight path when ro.product.manufacturer is "Xiaomi" (inherited from the vendor):
+# zig-zag brightness, black at the low end (boots 20/21). The shim reports "samsung" to the lights HAL only.
 [ -f $P/work/input/liblights_scale_shim.so ] || { echo "run shims/build.sh first"; exit 1; }
 install -m 0644 -o root -g root $P/work/input/liblights_scale_shim.so $V/lib64/liblights_scale_shim.so
 label vendor_file $V/lib64/liblights_scale_shim.so

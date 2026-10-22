@@ -177,7 +177,13 @@ Read live via adb (avc denials are not in Samsung's logcat and dmesg needs root,
   clock right of the top-left punch hole; S23 framework overlay patched (`tools/patch_s23_rro.sh`) without
   cutout/status bar sizes (removing it entirely crashes system_server on the brightness map).
 - USB: Samsung's `sec_charging(,adb)` functions handled in `configs/init/oneui-renoir-usb.rc`.
-- Open: brightness (Samsung ignores displayconfig files, uses S23 config.xml arrays + lights HAL), vibration,
+- Brightness (2026-10-23): Samsung only reads config.xml (displayconfig default.xml is used for density only) and drives
+  the lights HAL. lights.qcom.so takes its MIUI path when ro.product.manufacturer is "Xiaomi" (color & 0xfff), which
+  turned Samsung's AOSP colour into (level*257)&0xfff -> zig-zag, black at the low end. shims/lights_scale makes
+  property_get report "samsung" inside the lights HAL only -> AOSP path, panel (level+1)*8-1. S23 brightness tables
+  and config_screenBrightnessExtendedMaximum (612 -> max 2.4) removed; own 0..255 / 2..500 nits table.
+- Bluetooth audio: TrebleDroid sysbta + shims/btaudio_alias (Samsung's stack only looks for ".../default").
+- Open: vibration,
   Samsung Core Services `/data/sec/geodb` (an init mkdir on /data/sec sent the phone to recovery: don't),
   Galaxy Store 2300:1004 (server side; test with SIM), proximity sensor missing.
 
