@@ -15,7 +15,7 @@ FW=$P/work/fw
 OUT=$P/work/out
 W=/root/oneui-port
 DEBUG=${DEBUG:-1}
-Z=${Z:-lz4hc,12}        # renoir's 5.4 kernel reads lz4 only (no lzma, no big pclusters)
+Z=${Z:-lz4}             # renoir's 5.4 kernel reads lz4 only; plain lz4 packs much faster than lz4hc,12 (pad retries, see pack)
 mkdir -p "$OUT"
 
 mnt() { mkdir -p "$2"; mountpoint -q "$2" || mount -o loop,ro "$1" "$2"; }
@@ -88,6 +88,64 @@ for tag, old, new in (('COMMON_CONFIG_DEVICE_MANUFACTURING_TYPE', 'in_house', 'j
 with open(p, 'r+') as f: f.write(s); f.truncate()
 PY
 
+echo "== system: Bluetooth audio via TrebleDroid's system-side provider (sysbta) + own alias"
+# Samsung's Bluetooth stack needs an AIDL BluetoothAudio provider ("BluetoothAudio AIDL implementation does not
+# exist"; renoir only has QTI/AOSP HIDL bluetooth.audio@2.0) and then aborted in its legacy QTI path
+# ("Check failed: btAudio != nullptr") as soon as A2DP audio started (AirPods dropped). TrebleDroid's sysbta
+# (Apache-2.0, device_phh_treble/bluetooth/audio, prebuilt from GSI ci-20250617, see work/input/sysbta) provides it
+# system-side together with a system audio HAL 6.0 that hosts audio.sysbta.default. It registers ".../sysbta";
+# Samsung's stack only knows ".../default" -> shims/btaudio_alias adds the same binder under that name.
+SB=$P/work/input/sysbta
+[ -f $SB/bin/hw/android.hardware.bluetooth.audio-service-system ] && [ -f $P/work/input/btaudio_alias ] \
+  || { echo "missing work/input/sysbta or btaudio_alias (shims/build.sh)"; exit 1; }
+for d in lib64/hw:system_lib_file bin/hw:system_file; do   # Samsung's system has no lib64/hw
+  [ -d $S/system/${d%%:*} ] || { install -d -m 0755 -o root -g root $S/system/${d%%:*}; label ${d##*:} $S/system/${d%%:*}; }
+done
+for f in $(cd $SB && find lib64 -type f); do
+  install -m 0644 -o root -g root $SB/$f $S/system/$f; label system_lib_file $S/system/$f
+done
+install -m 0755 $SB/bin/hw/android.hardware.bluetooth.audio-service-system $S/system/bin/hw/
+install -m 0755 $P/work/input/btaudio_alias $S/system/bin/hw/btaudio_alias
+chown 0:2000 $S/system/bin/hw/android.hardware.bluetooth.audio-service-system $S/system/bin/hw/btaudio_alias   # root:shell
+label hal_audio_sysbta_exec $S/system/bin/hw/android.hardware.bluetooth.audio-service-system $S/system/bin/hw/btaudio_alias
+cat > $S/system/etc/init/oneui-renoir-btaudio.rc <<'RC'
+# TrebleDroid's sysbta service (device_phh_treble/bluetooth/audio/hal) + our alias as ".../default"
+service system.bt-audio-hal /system/bin/hw/android.hardware.bluetooth.audio-service-system
+    class hal
+    user audioserver
+    group audio camera drmrpc inet media mediadrm net_bt net_bt_admin net_bw_acct wakelock context_hub
+    capabilities BLOCK_SUSPEND
+    ioprio rt 4
+    task_profiles ProcessCapacityHigh HighPerformance
+    onrestart restart audioserver
+    onrestart restart system.bt-audio-alias
+
+service system.bt-audio-alias /system/bin/hw/btaudio_alias
+    class hal
+    user audioserver
+    group audio
+RC
+cat > $S/system/etc/vintf/manifest/oneui-renoir-btaudio.xml <<'XML'
+<manifest version="1.0" type="framework">
+    <hal format="aidl">
+        <name>android.hardware.bluetooth.audio</name>
+        <version>4</version>
+        <fqname>IBluetoothAudioProviderFactory/sysbta</fqname>
+        <fqname>IBluetoothAudioProviderFactory/default</fqname>
+    </hal>
+    <hal>
+        <name>android.hardware.audio</name>
+        <transport>hwbinder</transport>
+        <fqname>@6.0::IDevicesFactory/sysbta</fqname>
+    </hal>
+</manifest>
+XML
+chmod 0644 $S/system/etc/init/oneui-renoir-btaudio.rc $S/system/etc/vintf/manifest/oneui-renoir-btaudio.xml
+label system_file $S/system/etc/init/oneui-renoir-btaudio.rc $S/system/etc/vintf/manifest/oneui-renoir-btaudio.xml
+# ".../sysbta" has no service context in Samsung's policy (only ".../default")
+echo 'android.hardware.bluetooth.audio.IBluetoothAudioProviderFactory/sysbta u:object_r:hal_audio_service:s0' \
+  >> $SE/etc/selinux/system_ext_service_contexts
+
 echo "== system_ext: selinux domain for Samsung apps with OEM uids (5000-5999)"
 # A Samsung vendor maps these uids (com.samsung.cmh 5004, scloud/scpm 5009, rubin 5010); without an entry zygote
 # aborts: "seapp_context_lookup: No match for app with uid 5004 ... username oem_5004" (boot 10). Run them like the
@@ -159,6 +217,24 @@ echo "== audio: Samsung's audioserver reads *_sec.xml configs only (a Samsung ve
 # Samsung-flavoured copies). Policy: the full QTI one fixed above (absolute XIncludes).
 install -m 0644 -o root -g root $V/etc/audio/sku_shima_qssi/audio_policy_configuration.xml $V/etc/audio_policy_configuration_sec.xml
 install -m 0644 -o root -g root $V/etc/audio_effects.xml $V/etc/audio_effects_sec.xml
+# A2DP output goes to TrebleDroid's sysbta module (see the Bluetooth section): drop the QTI A2DP offload ports
+# of the primary module and replace the QTI "bluetooth_qti" module (its HIDL session is not the one Samsung's stack
+# uses) with sysbta's module. A2DP input (sink mode) is dropped with it.
+python3 -I - "$V/etc/audio_policy_configuration_sec.xml" "$P/work/input/sysbta/etc/sysbta_audio_policy_configuration.xml" <<'EOF'
+import re, sys
+p, sb = sys.argv[1:3]; s = open(p).read()
+mod = open(sb).read()
+mod = mod[mod.index('<module'):mod.rindex('</module>') + len('</module>')]
+pm = re.search(r'<module name="primary".*?</module>', s, re.S).group(0)
+pm2, n1 = re.subn(r'\n[ \t]*<devicePort tagName="BT A2DP (Out|Headphones|Speaker)".*?</devicePort>', '', pm, flags=re.S)
+pm2, n2 = re.subn(r'\n[ \t]*<route type="mix" sink="BT A2DP (Out|Headphones|Speaker)"\s+sources="[^"]*"\s*/>', '', pm2)
+assert (n1, n2) == (3, 3), (n1, n2)
+s = s.replace(pm, pm2)
+s, n3 = re.subn(r'<module name="bluetooth_qti".*?</module>', lambda m: mod, s, flags=re.S)
+assert n3 == 1, n3
+with open(p, 'r+') as f: f.write(s); f.truncate()
+print('audio policy: A2DP -> sysbta')
+EOF
 label vendor_configs_file $V/etc/audio_policy_configuration_sec.xml $V/etc/audio_effects_sec.xml
 # Boot 12: distorted sound. Samsung's mixer then runs in the primary/deep-buffer HAL format (24-bit packed here);
 # the lisa reference uses 16-bit for those outputs. Rewrite in place (keeps the label).
@@ -205,6 +281,20 @@ assert s.count(a) == 1 and 'LD_PRELOAD' not in s
 s = s.replace(a, a + '    setenv LD_PRELOAD /vendor/lib64/libfpc_timeout_shim.so\n')
 with open(p, 'r+') as f: f.write(s); f.truncate()
 PY
+
+echo "== brightness: rescale shim preloaded into the lights HAL (shims/lights_scale, built by shims/build.sh)"
+# Backlight values reached the panel as (level * 257) & 0x7ff: zig-zag brightness, black at the low end (boot 21).
+[ -f $P/work/input/liblights_scale_shim.so ] || { echo "run shims/build.sh first"; exit 1; }
+install -m 0644 -o root -g root $P/work/input/liblights_scale_shim.so $V/lib64/liblights_scale_shim.so
+label vendor_file $V/lib64/liblights_scale_shim.so
+python3 -I - "$V/etc/init/android.hardware.lights-qti.rc" <<'EOF'
+import sys
+p = sys.argv[1]; s = open(p).read()
+a = 'service vendor.light-qti /vendor/bin/hw/android.hardware.lights-service.qti\n'
+assert s.count(a) == 1 and 'LD_PRELOAD' not in s
+s = s.replace(a, a + '    setenv LD_PRELOAD /vendor/lib64/liblights_scale_shim.so\n')
+with open(p, 'r+') as f: f.write(s); f.truncate()
+EOF
 
 echo "== remove Xiaomi payment/security services that need MIUI's framework"
 for a in MipayService SoterService IFAAService CACertService; do rm -rf "$V/app/$a"; done
@@ -337,6 +427,27 @@ cat >> $V/etc/selinux/vendor_sepolicy.cil <<'CIL'
 ;; mfp-daemon gets the fingerprint timeout shim via LD_PRELOAD; the domain transition would set AT_SECURE and the
 ;; linker would drop LD_PRELOAD.
 (allow init vendor_mfp-daemon (process (noatsecure)))
+;; the lights HAL gets the backlight rescale shim via LD_PRELOAD (same reason)
+(allow init hal_light_default (process (noatsecure)))
+;; TrebleDroid's system-side Bluetooth audio HAL (sysbta) and our alias (device_phh_treble sepolicy/hal_audio_sysbta.te
+;; in CIL). Permissive for now (debug builds): its exact needs on Samsung's policy are not known yet.
+(type hal_audio_sysbta)
+(roletype r hal_audio_sysbta)
+(typeattributeset domain (hal_audio_sysbta))
+(typeattributeset coredomain (hal_audio_sysbta))
+(typeattributeset hal_audio_server (hal_audio_sysbta))
+(typeattributeset halserverdomain (hal_audio_sysbta))
+(typeattributeset hal_allocator_client (hal_audio_sysbta))
+(type hal_audio_sysbta_exec)
+(roletype object_r hal_audio_sysbta_exec)
+(typeattributeset exec_type (hal_audio_sysbta_exec))
+(typeattributeset system_file_type (hal_audio_sysbta_exec))
+(typeattributeset file_type (hal_audio_sysbta_exec))
+(allow init hal_audio_sysbta_exec (file (read getattr map execute open)))
+(allow init hal_audio_sysbta (process (transition siginh rlimitinh noatsecure)))
+(allow hal_audio_sysbta hal_audio_sysbta_exec (file (read getattr map execute open entrypoint)))
+(typetransition init hal_audio_sysbta_exec process hal_audio_sysbta)
+(typepermissive hal_audio_sysbta)
 CIL
 
 echo "== odm: the edited vendor policy must be compiled on boot -> drop the precompiled one"
@@ -366,7 +477,23 @@ echo "== pack (erofs $Z, fixed timestamps)"
 # PACK="vendor odm" repacks only those (the other images in work/out must be from the same sources)
 for p in ${PACK:-system_ext product vendor odm system}; do
   mp=/$p; [ $p = system ] && mp=/
-  mkfs.erofs -z$Z -T 1230768000 --mount-point=$mp "$OUT/$p.img" /mnt/oui_m_$p >/dev/null
+  # renoir's 5.4 erofs can't read inline data crossing a 4 KiB block boundary (boot 19: the /system/lib64/libm.so
+  # symlink landed on one -> 64-bit binaries failed -> boringssl self test reboot loop). mkfs.erofs 1.9 always
+  # inlines symlinks (-E noinline_data only covers regular files), so check the image and, if an inode crosses,
+  # add an empty pad file (shifts the inode layout) and pack again.
+  etc=/mnt/oui_m_$p   # pad at the image root: sorts before every directory, so it shifts all inodes
+  for try in 0 1 2 3 4 5 6 7; do
+    mkfs.erofs -z$Z -E noinline_data -T 1230768000 --mount-point=$mp "$OUT/$p.img" /mnt/oui_m_$p >/dev/null
+    mkdir -p /root/oneui-pack-chk; mount -o loop,ro "$OUT/$p.img" /root/oneui-pack-chk
+    ok=0; bash $P/tools/erofs_inline_check.sh "$OUT/$p.img" /root/oneui-pack-chk > /root/oneui-pack-chk.log || ok=$?
+    umount /root/oneui-pack-chk
+    [ $ok = 0 ] && break
+    echo "$p: inline data across a block boundary: $(head -1 /root/oneui-pack-chk.log) -> pad $try"
+    [ $try = 7 ] && { echo "could not avoid the boundary"; exit 1; }
+    # one more empty pad inode per try (the number of inodes shifts the layout, their size does not)
+    : > $etc/.0oneui_erofs_pad_$try; chmod 0644 $etc/.0oneui_erofs_pad_$try
+    setfattr -n security.selinux -v "$(getfattr --only-values -n security.selinux $etc)" $etc/.0oneui_erofs_pad_$try
+  done
   echo "$p.img $(stat -c %s "$OUT/$p.img")"
 done
 for p in system system_ext product vendor odm; do umount /mnt/oui_m_$p; done

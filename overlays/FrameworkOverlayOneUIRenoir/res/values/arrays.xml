@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brightness map for Samsung's DisplayDeviceConfig (it only reads config.xml here). renoir's lights HAL writes
+         value * 8 into panel0-backlight (max 2047), so backlight 0..255 maps linearly onto the panel. Must start at 0
+         (system_server rejects a raw minimum above the setting minimum, boot 13). Nits as in the nothing-renoir
+         display config (2..500). -->
+    <integer-array name="config_screenBrightnessBacklight">
+        <item>0</item>
+        <item>255</item>
+    </integer-array>
+    <array name="config_screenBrightnessNits">
+        <item>2.0</item>
+        <item>500.0</item>
+    </array>
+</resources>

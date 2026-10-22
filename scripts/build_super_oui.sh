@@ -17,6 +17,7 @@ mk() {  # shellcheck disable=SC2086
   python3 -I $P/tools/lpmake.py "$@" --layout=$O/super.layout $NR/work/super-stock-head.bin $O/super.img $args
 }
 check=$PARTS
+bash $P/scripts/preflight.sh || { echo "preflight failed: not building super"; exit 1; }
 if [ -n "${ONLY:-}" ] && [ -f $O/super.flashed.layout ]; then
   only=$(for p in $ONLY; do printf '%s_a,' $p; done); only=${only%,}
   mk --only=$only

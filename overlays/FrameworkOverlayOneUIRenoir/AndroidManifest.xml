@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- oneui-renoir: framework values for renoir under One UI. Priority above the LineageOS renoir overlays (200). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="android.overlay.oneuirenoir">
+    <overlay android:targetPackage="android" android:isStatic="true" android:priority="300" />
+</manifest>
