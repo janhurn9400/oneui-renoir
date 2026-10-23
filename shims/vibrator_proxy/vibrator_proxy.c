@@ -12,7 +12,14 @@
  * IVibrator/vibratorfeature and the reply copied back. Its binder extension is a minimal ISehVibrator (V5, hash from
  * Samsung's vendor.samsung.hardware.vibrator-V5-ndk.so) that reports its version/hash and answers every Samsung
  * call with EX_UNSUPPORTED_OPERATION, i.e. "no haptic engine". Own code; Xiaomi's and Samsung's files untouched.
+ *
+ * Short on() calls are translated: without a haptic engine One UI plays every touch/keyboard haptic as
+ * on(45/55/70 ms) at amplitude 0xc9 (low/mid/high intensity setting), which feels like a buzz on renoir's LRA.
+ * on(timeoutMs < SHORT_ON_MS) becomes a prebaked effect chosen by the duration (low: TICK, mid: CLICK, high:
+ * CLICK strong); if Xiaomi's HAL rejects it, the original on() is forwarded. Xiaomi's HAL plays LIGHT at Vmax 0 mV
+ * (nothing), MEDIUM at 1225 mV and STRONG at 2450 mV (kernel log), so LIGHT is never used. Longer vibrations pass through unchanged.
  */
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -28,6 +35,13 @@
 #define SEH_DESC "vendor.samsung.hardware.vibrator.ISehVibrator"
 #define SEH_VERSION 5
 #define SEH_HASH "41c6b1795252a8a498c41ea9d7baed6192bd5eaa"
+#define CODE_ON 3                             /* on(int timeoutMs, IVibratorCallback callback) */
+#define CODE_PERFORM 4                        /* int perform(Effect effect, EffectStrength strength, callback) */
+#define EFFECT_CLICK 0
+#define EFFECT_TICK 2
+#define STRENGTH_MEDIUM 1
+#define STRENGTH_STRONG 2
+#define SHORT_ON_MS 80
 #define CODE_GET_INTERFACE_VERSION 16777215   /* FIRST_CALL_TRANSACTION + 16777214 */
 #define CODE_GET_INTERFACE_HASH 16777214      /* FIRST_CALL_TRANSACTION + 16777213 */
 
@@ -45,12 +59,47 @@ static AIBinder *g_target;   /* Xiaomi's IVibrator/vibratorfeature */
 static void *on_create(void *args) { return args; }
 static void on_destroy(void *data) { (void)data; }
 
+/* on(timeoutMs < SHORT_ON_MS) -> perform(TICK/CLICK). Returns STATUS_OK with on()'s reply in out, or an error if the
+ * caller should forward the original on() instead. */
+static binder_status_t short_on_as_click(const AParcel *in, AParcel *out) {
+    int32_t ms;
+    AIBinder *cb = NULL;
+    if (AParcel_readInt32(in, &ms) != STATUS_OK || ms <= 0 || ms >= SHORT_ON_MS) return STATUS_BAD_VALUE;
+    if (AParcel_readStrongBinder(in, &cb) != STATUS_OK) return STATUS_BAD_VALUE;
+    int32_t effect = ms <= 48 ? EFFECT_TICK : EFFECT_CLICK;              /* One UI: 45 / 55 / 70 ms */
+    int8_t strength = ms <= 60 ? STRENGTH_MEDIUM : STRENGTH_STRONG;
+    AParcel *fwd = NULL, *reply = NULL;
+    binder_status_t st = AIBinder_prepareTransaction(g_target, &fwd);
+    if (st == STATUS_OK) st = AParcel_writeInt32(fwd, effect);
+    if (st == STATUS_OK) st = AParcel_writeByte(fwd, strength);
+    if (st == STATUS_OK) st = AParcel_writeStrongBinder(fwd, cb);
+    if (cb) AIBinder_decStrong(cb);
+    if (st != STATUS_OK) { AParcel_delete(fwd); return st; }
+    st = AIBinder_transact(g_target, CODE_PERFORM, &fwd, &reply, 0);
+    if (st != STATUS_OK) return st;
+    AStatus *status = NULL;
+    st = AParcel_readStatusHeader(reply, &status);
+    AParcel_delete(reply);
+    if (st != STATUS_OK) return st;
+    bool ok = AStatus_isOk(status);
+    AStatus_delete(status);
+    if (!ok) return STATUS_INVALID_OPERATION;
+    AStatus *on_ok = AStatus_newOk();
+    st = AParcel_writeStatusHeader(out, on_ok);                         /* on() returns void */
+    AStatus_delete(on_ok);
+    return st;
+}
+
 static binder_status_t vib_transact(AIBinder *self, transaction_code_t code, const AParcel *in, AParcel *out) {
     (void)self;
+    int32_t pos = AParcel_getDataPosition(in);                          /* NDK already consumed the token */
+    if (code == CODE_ON) {
+        if (short_on_as_click(in, out) == STATUS_OK) return STATUS_OK;
+        AParcel_setDataPosition((AParcel *)in, pos);
+    }
     AParcel *fwd = NULL, *reply = NULL;
     binder_status_t st = AIBinder_prepareTransaction(g_target, &fwd);   /* writes the IVibrator interface token */
     if (st != STATUS_OK) return st;
-    int32_t pos = AParcel_getDataPosition(in);                          /* NDK already consumed the token */
     st = AParcel_appendFrom(in, fwd, pos, AParcel_getDataSize(in) - pos);
     if (st != STATUS_OK) { AParcel_delete(fwd); return st; }
     st = AIBinder_transact(g_target, code, &fwd, &reply, 0);            /* consumes fwd */

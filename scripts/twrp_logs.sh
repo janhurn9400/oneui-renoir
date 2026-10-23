@@ -4,8 +4,8 @@
 # Usage: scripts/twrp_logs.sh boot12
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PT=${PT:-$HOME/Library/Android/sdk/platform-tools}
-TWRP=${TWRP:-$HOME/Desktop/nothing-renoir/input/recovery/twrp-3.7.0_11-0-renoir.img}
+PT=${PT:-$(dirname "$(command -v adb || echo "$HOME/Library/Android/sdk/platform-tools/adb")")}
+TWRP=${TWRP:-$ROOT/work/twrp.img}   # TWRP for renoir (twrp-3.7.0_11-0-renoir.img)
 D=$ROOT/work/logs/${1:?usage: twrp_logs.sh <logdir name>}
 export ADB_LIBUSB=1
 mkdir -p "$D"

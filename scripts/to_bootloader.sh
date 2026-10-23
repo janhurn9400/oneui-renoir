@@ -2,7 +2,7 @@
 # Bring the phone into the bootloader from wherever it is: Android (adb device), TWRP (adb recovery) or already
 # fastboot. Waits (up to 10 min) until one of them shows up; during a boot loop adb is only there for moments.
 set -euo pipefail
-PT=${PT:-$HOME/Library/Android/sdk/platform-tools}
+PT=${PT:-$(dirname "$(command -v adb || echo "$HOME/Library/Android/sdk/platform-tools/adb")")}
 export ADB_LIBUSB=1
 for _ in $(seq 1 300); do
   if "$PT/fastboot" devices | grep -q fastboot; then echo "in fastboot"; exit 0; fi

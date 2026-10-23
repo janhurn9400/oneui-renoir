@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 # Flash the One UI port super (scripts/build_super_oui.sh) from the bootloader (normal fastboot, no fastbootd).
 # Expects renoir's stock firmware/boot/dtbo on the phone (true after MIUI's flash_all or the Nothing port).
-# Also writes vbmeta with verification disabled (stock vbmeta images from the nothing-renoir project).
+# Also writes vbmeta with verification disabled (MIUI's vbmeta images, work/stock).
 # Usage: scripts/flash_super.sh [--wipe]    (switching from another ROM needs --wipe)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-FB="${FASTBOOT:-$HOME/Library/Android/sdk/platform-tools/fastboot}"
+FB="${FASTBOOT:-$(command -v fastboot || echo "$HOME/Library/Android/sdk/platform-tools/fastboot")}"
 OUTDIR=$(cd "${OUTDIR:-$ROOT/work/out}" && pwd)
-NR=${NR:-$HOME/Desktop/nothing-renoir}
+STOCK=${STOCK:-$ROOT/work/stock}   # scripts/prepare_inputs.sh
 SUPER=$OUTDIR/super.img
 VBOOT=$OUTDIR/vendor_boot.img   # stock + fstab without AVB/mi_ext (tools/vendorboot_fstab.py)
 for f in "$SUPER" "$VBOOT"; do [ -f "$f" ] || { echo "missing $f"; exit 1; }; done
 product=$("$FB" getvar product 2>&1 | awk -F': *' '/^product:/ {print $2}')
 [ "$product" = renoir ] || { echo "no renoir in fastboot mode (product='$product')"; exit 1; }
 "$FB" getvar is-userspace 2>&1 | grep -q 'is-userspace: no' || { echo "reboot to the bootloader first"; exit 1; }
-STOCK=$(ls -d "$NR"/work/stock-flash/renoir_global_images_*/images)
 echo "-> vbmeta + vbmeta_system with verification disabled (stock flash_all re-enables it)"
 "$FB" --disable-verity --disable-verification flash vbmeta_ab "$STOCK/vbmeta.img"
 "$FB" --disable-verity --disable-verification flash vbmeta_system_ab "$STOCK/vbmeta_system.img"

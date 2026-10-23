@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Watch a test boot from the Mac: wait for adb, wait for boot_completed, then stream the crash buffer.
-A=${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}
+A=${ADB:-$(command -v adb || echo "$HOME/Library/Android/sdk/platform-tools/adb")}
 echo "== waiting for adb ..."
 "$A" wait-for-device
 echo "== adb up, waiting for sys.boot_completed ..."

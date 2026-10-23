@@ -7,7 +7,7 @@
 #   4. every changed/added ELF finds its NEEDED libraries on the target partitions (or the runtime/VNDK sets)
 #   5. every service in a changed/added init rc points to an existing, executable, labelled file
 set -uo pipefail
-P=${P:-/media/psf/Home/Desktop/oneui-renoir}
+P=${P:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 OUT=$P/work/out
 W=/root/oneui-port
 PARTS="system system_ext product vendor odm"

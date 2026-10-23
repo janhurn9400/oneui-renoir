@@ -7,23 +7,26 @@
 # /root/oneui-port), packed with mkfs.erofs from the merged view. Files we change get copied up with their
 # xattrs; new files get their selinux label explicitly; a final check refuses unlabelled files.
 #
-# DEBUG=1 (default): SELinux permissive, adb without authorization (Mac key in /product/etc/security/adb_keys).
+# DEBUG=1 (default): adb without authorization (Mac key in /product/etc/security/adb_keys), boot logcat in /metadata,
+# dmesg for adb shell. DEBUG=0: release build, adb only after the usual authorization prompt. SELinux is enforcing
+# in both (Samsung's policy never let init switch it: every boot so far ran enforcing).
 set -euo pipefail
-P=${P:-/media/psf/Home/Desktop/oneui-renoir}
-NR=${NR:-/media/psf/Home/Desktop/nothing-renoir}   # sibling project: renoir stock images (read only)
+P=${P:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+STOCK=${STOCK:-$P/work/stock}   # renoir stock images from MIUI (scripts/prepare_inputs.sh, read only)
 FW=$P/work/fw
 OUT=$P/work/out
 W=/root/oneui-port
 DEBUG=${DEBUG:-1}
 Z=${Z:-lz4}             # renoir's 5.4 kernel reads lz4 only; plain lz4 packs much faster than lz4hc,12 (pad retries, see pack)
 mkdir -p "$OUT"
+[ "$DEBUG" = 1 ] && echo debug > "$OUT/build.kind" || echo release > "$OUT/build.kind"   # scripts/make_release.sh
 
 mnt() { mkdir -p "$2"; mountpoint -q "$2" || mount -o loop,ro "$1" "$2"; }
 lower() { case $1 in system|system_ext|product) echo /mnt/oui_f$1 ;; vendor) echo /mnt/oui_rv ;; odm) echo /mnt/oui_ro ;; esac; }
 modprobe erofs 2>/dev/null || true
 for p in system system_ext product; do mnt $FW/$p.img $(lower $p); done
-mnt $NR/work/renoir-stock/images/vendor.img /mnt/oui_rv
-mnt $NR/work/renoir-stock/images/odm.img    /mnt/oui_ro
+mnt $STOCK/vendor.img /mnt/oui_rv
+mnt $STOCK/odm.img    /mnt/oui_ro
 
 echo "== overlays (fresh upper dirs)"
 for p in system system_ext product vendor odm; do
@@ -58,7 +61,7 @@ while read -r f; do
 done < $P/configs/remove-files.txt
 
 echo "== system_ext: VNDK v30 apex for renoir's API-30 vendor (Samsung ships v33 only)"
-# AOSP prebuilt, taken from Nothing OS 4.1's system_ext (work/input/com.android.vndk.v30.apex)
+# AOSP prebuilt (work/input/com.android.vndk.v30.apex, scripts/prepare_inputs.sh, sha256 in configs/inputs.sha256)
 install -m 0644 -o root -g root $P/work/input/com.android.vndk.v30.apex $SE/apex/com.android.vndk.v30.apex
 label system_file $SE/apex/com.android.vndk.v30.apex
 # ...and declare it: Samsung's framework manifest lists vendor-ndk 33 only, so VintfObject::verifyBuildAtBoot fails
@@ -96,7 +99,7 @@ echo "== system: Bluetooth audio via TrebleDroid's system-side provider (sysbta)
 # system-side together with a system audio HAL 6.0 that hosts audio.sysbta.default. It registers ".../sysbta";
 # Samsung's stack only knows ".../default" -> shims/btaudio_alias adds the same binder under that name.
 SB=$P/work/input/sysbta
-[ -f $SB/bin/hw/android.hardware.bluetooth.audio-service-system ] && [ -f $P/work/input/btaudio_alias ] \
+[ -f $SB/bin/hw/android.hardware.bluetooth.audio-service-system ] && [ -f $P/input/shims/btaudio_alias ] \
   || { echo "missing work/input/sysbta or btaudio_alias (shims/build.sh)"; exit 1; }
 for d in lib64/hw:system_lib_file bin/hw:system_file; do   # Samsung's system has no lib64/hw
   [ -d $S/system/${d%%:*} ] || { install -d -m 0755 -o root -g root $S/system/${d%%:*}; label ${d##*:} $S/system/${d%%:*}; }
@@ -105,7 +108,7 @@ for f in $(cd $SB && find lib64 -type f); do
   install -m 0644 -o root -g root $SB/$f $S/system/$f; label system_lib_file $S/system/$f
 done
 install -m 0755 $SB/bin/hw/android.hardware.bluetooth.audio-service-system $S/system/bin/hw/
-install -m 0755 $P/work/input/btaudio_alias $S/system/bin/hw/btaudio_alias
+install -m 0755 $P/input/shims/btaudio_alias $S/system/bin/hw/btaudio_alias
 chown 0:2000 $S/system/bin/hw/android.hardware.bluetooth.audio-service-system $S/system/bin/hw/btaudio_alias   # root:shell
 label hal_audio_sysbta_exec $S/system/bin/hw/android.hardware.bluetooth.audio-service-system $S/system/bin/hw/btaudio_alias
 cat > $S/system/etc/init/oneui-renoir-btaudio.rc <<'RC'
@@ -149,8 +152,8 @@ echo 'android.hardware.bluetooth.audio.IBluetoothAudioProviderFactory/sysbta u:o
 echo "== system: vibrator proxy (shims/vibrator_proxy): IVibrator/default -> Xiaomi's vibratorfeature + ISehVibrator stub"
 # One UI only uses IVibrator/default and needs the Samsung ISehVibrator extension on it (boot 5: SIGSEGV in
 # AidlHalWrapper::supportsHapticEngine with Xiaomi's HAL registered as default). See the source for details.
-[ -f $P/work/input/vibrator_proxy ] || { echo "run shims/build.sh first"; exit 1; }
-install -m 0755 $P/work/input/vibrator_proxy $S/system/bin/hw/vibrator_proxy
+[ -f $P/input/shims/vibrator_proxy ] || { echo "run shims/build.sh first"; exit 1; }
+install -m 0755 $P/input/shims/vibrator_proxy $S/system/bin/hw/vibrator_proxy
 chown 0:2000 $S/system/bin/hw/vibrator_proxy
 label hal_vibrator_proxy_exec $S/system/bin/hw/vibrator_proxy
 cat > $S/system/etc/init/oneui-renoir-vibrator.rc <<'RC'
@@ -182,11 +185,11 @@ for a in FrameworkOverlayRenoir FrameworkOverlaySM8350 SystemUIOverlayRenoir Sys
   install -m 0644 -o root -g root "$P/input/lineage-overlays/$a.apk" "$V/overlay/$a.apk"
   label vendor_overlay_file "$V/overlay/$a.apk"
 done
-echo "== vendor: own overlays (overlays/, built on the Mac by tools/build_overlays.sh)"
+echo "== vendor: own overlays (overlays/, prebuilt in input/oneui-overlays by tools/build_overlays.sh)"
 for d in $P/overlays/*/; do
   a=$(basename $d)
-  [ -f $P/work/input/$a.apk ] || { echo "run tools/build_overlays.sh first ($a)"; exit 1; }
-  install -m 0644 -o root -g root $P/work/input/$a.apk "$V/overlay/$a.apk"
+  [ -f $P/input/oneui-overlays/$a.apk ] || { echo "run tools/build_overlays.sh first ($a)"; exit 1; }
+  install -m 0644 -o root -g root $P/input/oneui-overlays/$a.apk "$V/overlay/$a.apk"
   label vendor_overlay_file "$V/overlay/$a.apk"
 done
 
@@ -294,8 +297,8 @@ label vendor_configs_file $V/etc/init/oneui-renoir-usb.rc
 echo "== fingerprint: enroll timeout shim preloaded into mfp-daemon (shims/fpc_timeout, built by shims/build.sh)"
 # Samsung always sends enroll timeout 0; renoir's FPC HAL then waits 0 ms for the finger (FPC_ERROR_TIMEDOUT,
 # boots 17/18). The shim turns 0 into AOSP's 60 s. Rewrite the rc in place (keeps its selinux label).
-[ -f $P/work/input/libfpc_timeout_shim.so ] || { echo "run shims/build.sh first"; exit 1; }
-install -m 0644 -o root -g root $P/work/input/libfpc_timeout_shim.so $V/lib64/libfpc_timeout_shim.so
+[ -f $P/input/shims/libfpc_timeout_shim.so ] || { echo "run shims/build.sh first"; exit 1; }
+install -m 0644 -o root -g root $P/input/shims/libfpc_timeout_shim.so $V/lib64/libfpc_timeout_shim.so
 label vendor_file $V/lib64/libfpc_timeout_shim.so
 python3 -I - "$V/etc/init/init.mfp-daemon.rc" <<'PY'
 import sys
@@ -309,8 +312,8 @@ PY
 echo "== brightness: lights HAL shim (shims/lights_scale, built by shims/build.sh)"
 # lights.qcom.so takes the MIUI backlight path when ro.product.manufacturer is "Xiaomi" (inherited from the vendor):
 # zig-zag brightness, black at the low end (boots 20/21). The shim reports "samsung" to the lights HAL only.
-[ -f $P/work/input/liblights_scale_shim.so ] || { echo "run shims/build.sh first"; exit 1; }
-install -m 0644 -o root -g root $P/work/input/liblights_scale_shim.so $V/lib64/liblights_scale_shim.so
+[ -f $P/input/shims/liblights_scale_shim.so ] || { echo "run shims/build.sh first"; exit 1; }
+install -m 0644 -o root -g root $P/input/shims/liblights_scale_shim.so $V/lib64/liblights_scale_shim.so
 label vendor_file $V/lib64/liblights_scale_shim.so
 python3 -I - "$V/etc/init/android.hardware.lights-qti.rc" <<'EOF'
 import sys
@@ -324,7 +327,7 @@ EOF
 echo "== remove Xiaomi payment/security services that need MIUI's framework"
 for a in MipayService SoterService IFAAService CACertService; do rm -rf "$V/app/$a"; done
 
-echo "== product: S23 framework overlay without cutout/status bar sizes (tools/patch_s23_rro.sh, run on the Mac)"
+echo "== product: S23 framework overlay without cutout/status bar sizes (tools/patch_s23_rro.sh, ./build.sh runs it)"
 # Product overlays outrank the LineageOS renoir overlays; with Samsung's original the S23 centre "notch" is drawn
 # (boot 12). Removing it entirely crashes system_server on the brightness map (boot 13).
 RRO=framework-res__dm1qxxx__auto_generated_rro_product.apk
@@ -361,8 +364,8 @@ ro.product_ship=true
 PROPS
 
 if [ "$DEBUG" = 1 ]; then
-  echo "== DEBUG: adb without auth from early boot (Mac key), SELinux permissive, no rescue party"
-  install -m 0644 -o root -g root $P/work/.vm/adbkey.pub $PR/etc/security/adb_keys
+  echo "== DEBUG: adb without auth from early boot (Mac key), no rescue party, boot logcat"
+  install -m 0644 -o root -g root ${ADB_KEY:-$P/work/.vm/adbkey.pub} $PR/etc/security/adb_keys   # ./build.sh: ADB_KEY
   label adb_keys_file $PR/etc/security/adb_keys
   cat >> $PR/etc/build.prop <<'PROPS'
 
@@ -370,6 +373,9 @@ if [ "$DEBUG" = 1 ]; then
 ro.adb.secure=0
 persist.sys.usb.config=mtp,adb
 persist.sys.disable_rescue=true
+# kernel messages into logcat (-b kernel) and so into the /metadata boot log: boot-time USB/driver issues stay
+# readable after the ring buffer has wrapped
+ro.logd.kernel=true
 PROPS
   cat >> $V/build.prop <<'PROPS'
 
@@ -380,12 +386,6 @@ persist.service.adb.enable=1
 persist.sys.disable_rescue=true
 PROPS
   cat > $V/etc/init/oneui-renoir-debug.rc <<'RC'
-# oneui-renoir debug: log SELinux denials instead of enforcing them
-on early-init
-    write /sys/fs/selinux/enforce 0
-on property:sys.boot_completed=1
-    write /sys/fs/selinux/enforce 0
-
 # Full logcat of every boot in /metadata (unencrypted ext4, 11 MB; TWRP mounts it), readable when USB/adb never
 # comes up: adb pull /metadata/oneui-logcat.txt (+ .1). At most 2 x 1.5 MB, so vold's keys there keep their room.
 service oneui_bootlog /system/bin/logcat -b all -v threadtime -f /metadata/oneui-logcat.txt -r 1536 -n 1
@@ -395,6 +395,10 @@ service oneui_bootlog /system/bin/logcat -b all -v threadtime -f /metadata/oneui
     disabled
 on post-fs-data
     start oneui_bootlog
+
+# kernel log for adb shell (dmesg) in debug builds
+on boot
+    write /proc/sys/kernel/dmesg_restrict 0
 
 # adb also in Samsung's charging-only mode (sys.usb.state stays "sec_charging" for the framework)
 on property:sys.usb.config=sec_charging && property:sys.usb.configfs=1
@@ -407,10 +411,9 @@ RC
   chmod 0644 $V/etc/init/oneui-renoir-debug.rc
   label vendor_configs_file $V/etc/init/oneui-renoir-debug.rc
   cat >> $V/etc/selinux/vendor_sepolicy.cil <<'CIL'
-;; oneui-renoir debug: allow init to switch SELinux to permissive (Samsung's policy, unlike AOSP's, doesn't let
-;; init open /sys/fs/selinux/enforce: boot 2 stayed enforcing)
-(allow init kernel (security (setenforce)))
-(allow init selinuxfs (file (open read write getattr)))
+;; oneui-renoir debug: dmesg for adb shell
+(allow shell kernel (system (syslog_read)))
+(allow shell kmsg_device (chr_file (read open getattr)))
 ;; oneui-renoir debug: boot logcat into /metadata (oneui-renoir-debug.rc), own permissive domain
 (type oneui_bootlog)
 (roletype r oneui_bootlog)
@@ -455,7 +458,7 @@ cat >> $V/etc/selinux/vendor_sepolicy.cil <<'CIL'
 ;; the lights HAL gets the backlight rescale shim via LD_PRELOAD (same reason)
 (allow init hal_light_default (process (noatsecure)))
 ;; TrebleDroid's system-side Bluetooth audio HAL (sysbta) and our alias (device_phh_treble sepolicy/hal_audio_sysbta.te
-;; in CIL). Permissive for now (debug builds): its exact needs on Samsung's policy are not known yet.
+;; in CIL). Enforcing: the hal_audio_server/halserverdomain attributes cover it (no denials while permissive).
 (type hal_audio_sysbta)
 (roletype r hal_audio_sysbta)
 (typeattributeset domain (hal_audio_sysbta))
@@ -472,9 +475,8 @@ cat >> $V/etc/selinux/vendor_sepolicy.cil <<'CIL'
 (allow init hal_audio_sysbta (process (transition siginh rlimitinh noatsecure)))
 (allow hal_audio_sysbta hal_audio_sysbta_exec (file (read getattr map execute open entrypoint)))
 (typetransition init hal_audio_sysbta_exec process hal_audio_sysbta)
-(typepermissive hal_audio_sysbta)
 ;; vibrator proxy (shims/vibrator_proxy): serves IVibrator/default, uses Xiaomi's IVibrator/vibratorfeature.
-;; Permissive for now (debug builds), like sysbta.
+;; Enforcing: the hal_vibrator_* attributes cover it (no denials while permissive).
 (type hal_vibrator_proxy)
 (roletype r hal_vibrator_proxy)
 (typeattributeset domain (hal_vibrator_proxy))
@@ -492,7 +494,6 @@ cat >> $V/etc/selinux/vendor_sepolicy.cil <<'CIL'
 (allow init hal_vibrator_proxy (process (transition siginh rlimitinh noatsecure)))
 (allow hal_vibrator_proxy hal_vibrator_proxy_exec (file (read getattr map execute open entrypoint)))
 (typetransition init hal_vibrator_proxy_exec process hal_vibrator_proxy)
-(typepermissive hal_vibrator_proxy)
 CIL
 
 echo "== odm: the edited vendor policy must be compiled on boot -> drop the precompiled one"

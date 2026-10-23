@@ -185,14 +185,35 @@ Read live via adb (avc denials are not in Samsung's logcat and dmesg needs root,
 - Bluetooth audio: TrebleDroid sysbta + shims/btaudio_alias (Samsung's stack only looks for ".../default").
 - Vibration (2026-10-23): shims/vibrator_proxy registers IVibrator/default as a pass-through to Xiaomi's
   IVibrator/vibratorfeature with a minimal vendor.samsung ISehVibrator (V5) extension answering "unsupported"
-  (Samsung's AidlHalWrapper dereferences that extension unchecked). Domain hal_vibrator_proxy permissive for now.
+  (Samsung's AidlHalWrapper dereferences that extension unchecked).
+- Keyboard haptics (2026-10-23): without a haptic engine One UI plays every touch haptic as on(45/55/70 ms) at
+  amplitude 0xc9 (intensity low/mid/high) -> a buzz on renoir's LRA. The proxy turns on(< 80 ms) into perform():
+  low TICK/MEDIUM, mid CLICK/MEDIUM, high CLICK/STRONG. Xiaomi's HAL plays EffectStrength LIGHT at Vmax 0 mV
+  (nothing at all; kernel log "Set Vmax to 0 mV"), MEDIUM at 1225 mV, STRONG at 2450 mV, so LIGHT is never used.
 - Open:
   Samsung Core Services `/data/sec/geodb` (an init mkdir on /data/sec sent the phone to recovery: don't),
   Galaxy Store 2300:1004 (server side; test with SIM), proximity sensor missing.
 
-## 6. Repo layout (so far)
-- `tools/` — copied from nothing-renoir: `lpmake.py`, `lpunpack.py`, `avb_footer.py`, `vendorboot_fstab.py`,
-  `sparse2raw.py`; `vm.sh` adapted (`$P=/media/psf/Home/Desktop/oneui-renoir`, same VM + ssh key).
-- `scripts/fix_sepolicy.sh` — copied. To be written: `assemble_oui.sh`, `build_super_oui.sh`, `flash_super.sh`
-  (adapted, same safety rules: wait for the bootloader after super, never interrupt fastboot, LUN 4 GPT fix).
-- VM paths: `/root/oneui-*` work dirs, `/mnt/oui_*` mounts. Never `/root/port-nos4`, `/root/nos4`, `/mnt/n*`, `/mnt/r*`.
+## 5g. Release build, SELinux, public repo (2026-10-23)
+- SELinux was **enforcing on every boot**: Samsung's policy never let init write /sys/fs/selinux/enforce (kernel:
+  enforcing=1 at 2 s; denials carry permissive=0). The debug rc/CIL that tried to switch it are gone. sysbta and
+  vibrator_proxy logged no denials while permissive -> `typepermissive` dropped; BT audio and vibration verified.
+- DEBUG=0 (release): no adb key, no boot logcat, no dmesg for shell; adb after the authorization prompt. Coming
+  from a debug build the prompt didn't appear until "Revoke USB debugging authorizations".
+- Third-party camera (Chrome): front and main camera stream (~25 fps); the notifyError burst is only the in-flight
+  frames dropped when a session closes.
+- Samsung Core Services (com.samsung.android.scs 5.0): GeoDatabase.initialize creates /data/sec/geodb as an app
+  uid -> AccessDeniedException, twice per boot, then runs on. Only place names in search are lost.
+- Public build path: `./build.sh` (Docker, Ubuntu 26.04) -> `scripts/prepare_inputs.sh` takes everything from three
+  public downloads (Samsung S911BXXS9EZCI, MIUI V14.0.7.0.TKIMIXM tgz, TrebleDroid ci-20250617 GSI) into
+  work/fw, work/stock, work/input and checks `configs/inputs.sha256`. No path into nothing-renoir any more.
+  Prebuilt own parts in `input/shims` and `input/oneui-overlays` (no NDK/SDK needed); the libbinder_ndk link stub
+  is generated from `shims/stubs/libbinder_ndk.syms` (binaries byte-identical to the ones linked against the
+  phone's library). vendor_boot.port.img is rebuilt from MIUI's (the old one also had `printk.devkmsg=on`).
+- `scripts/make_release.sh`: flashable zip (super + vendor_boot + MIUI vbmeta + release/flash_all.{sh,bat}).
+- Never edit a script while bash runs it: bash reads scripts incrementally (a test build died with a syntax error).
+
+## 6. Repo layout
+See README.md ("How it works"). Build machine of the original work: macOS + Parallels Ubuntu 26.04 VM
+(`tools/vm.sh` runs a snippet there as root, project at `$P=/media/psf/Home/Desktop/ROMS/oneui-renoir`).
+VM paths: `/root/oneui-port` upper dirs, `/mnt/oui_*` mounts.

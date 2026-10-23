@@ -1,0 +1,30 @@
+# sha256 of everything scripts/prepare_inputs.sh takes from the three public downloads (paths relative to work/).
+# A build only matches the tested one when all of these match.
+#
+# Samsung SM-S911B S911BXXS9EZCI (scripts/extract_firmware.sh)
+c19efbf529f44efd200f3099d87e80ebde6fe0b2d3475a76e4742a8cea89c08e  fw/system.img
+d5677af324cba00e97a382538609202086089313671612309c1e4b897d3bbd31  fw/system_ext.img
+8ac771e7fe9e63abbec826ba3b09c2d1869bd29661f6991179582b9639557a2d  fw/product.img
+79a7a9d472601fe3929be23cb6da209e83a5ecb1631ed77a234b56d31bf043bc  input/s23_rro_orig.apk
+# Xiaomi renoir MIUI V14.0.7.0.TKIMIXM fastboot ROM
+bcc228ca3b994eba91c1b4ba378720603b7433d2cabd9ce645552cf5a72e6d13  stock/vendor.img
+74112652eb9a10dd4f6b3fdc9ec2a4b58a0cb028305e3d9d8c1877d6f58cb45b  stock/odm.img
+0a5667cfe3cee8906765c88344d24702d86097209255b83132a399126f5a3d50  stock/vbmeta.img
+6d79fabbcac9bf1b6452b37db288942461afef51b96ad59717530237f4418bb5  stock/vbmeta_system.img
+9902b2c98b5e42a715ed796d7257c8f740f89345c7fef4045a3435668a545c5a  stock/super-head.bin
+c4fb6f0962aead07e6e75a30b7969478716e6fe68def6640288a2c83405779da  stock/vendor_boot.img
+674d920652249ff0718113391da581ca6bcef5b9ee1ee3a402adcb22568167b1  stock/vendor_boot.port.img
+# TrebleDroid GSI ci-20250617 system-td-arm64-vanilla (Apache-2.0)
+2467c99e03a8d3b57acdaee568ea8686a3888a2e974cd49043f97082a1421b76  input/com.android.vndk.v30.apex
+23960cdb29c56386db9d613ab80238764c36b236d9d36ff09529c75bd9788842  input/sysbta/lib64/libbluetooth_audio_session_aidl_system.so
+8e08c0a30de4a02abfd3177607c43d5188f0c810c3b45c5a8efb2ab755b55276  input/sysbta/lib64/android.hardware.bluetooth.audio-V5-ndk.so
+4a241e23bab579280b3a6d61f50b7060c63fc3c831031dcb636a18a579f4541c  input/sysbta/lib64/libbluetooth_audio_session_system.so
+be7ca5c2cbb7fda4e7cca0f23960645b3b2efa947b20d076f736d3788cdced88  input/sysbta/lib64/android.hardware.bluetooth.audio@2.0.so
+a98690696b6a01199e414630e4cb99f9be165c1c1a39b95be08b9101aa8201f9  input/sysbta/lib64/libflatbuffers-cpp.so
+9c77c00ad24b6bf4258972700ee4eb53ec5fdeceba998b8c3437a4dc01882710  input/sysbta/lib64/android.hardware.bluetooth.audio@2.1.so
+b1ea979ebb9c5bb485d8875095be63809e4f4ccb3948b24b8c9e1678d659c7f1  input/sysbta/lib64/libmediautils_vendor.so
+04a8ef2458cbefbba519600b0f7f2ab698bde9c641cf7660d29820f414947e70  input/sysbta/etc/sysbta_audio_policy_configuration.xml
+a874d06e81fed13cc0894232783cb78454fb2f22f5973ae145db3c8bcd9af469  input/sysbta/etc/init/android.hardware.bluetooth.audio-service-system.rc
+f56c7b58a4357a88208a430cd66dbb1a8e034378be9a86e8f690047695cea632  input/sysbta/lib64/hw/android.hardware.audio@6.0-impl-system.so
+90618512f7b6ef55ea590b27203c9e2e979a02d5b3e28476409c99ac0276b774  input/sysbta/lib64/hw/audio.sysbta.default.so
+9c618cc6421152ddb5bdae4a76613e72a0f092b77e83e4d5dc09ae11b89dbddb  input/sysbta/bin/hw/android.hardware.bluetooth.audio-service-system

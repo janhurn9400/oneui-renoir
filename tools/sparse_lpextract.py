@@ -7,6 +7,7 @@ writing the full super image. Samsung firmware ships super.img (sparse) lz4-comp
 The liblp metadata sits in the first MiBs of the image; once that part has streamed by, the partition table
 (slot 0) is parsed and every later chunk is written straight into the wanted partition images (holes = zeros).
 Names match with or without the _a suffix. Prints the partition table.
+With SUPER_HEAD=FILE in the environment the first 4 MiB (metadata) are saved too: tools/lpmake.py's template.
 With --sha256 instead of OUTDIR nothing is written: prints "sha256 name" per wanted partition (to verify a
 super we built, e.g. against sha256sum of the input images).
 """
@@ -162,6 +163,9 @@ def main():
             else:
                 pre = 0
             writer = make(parse_lp(bytes(head)))
+            if os.environ.get("SUPER_HEAD"):
+                with open(os.environ["SUPER_HEAD"], "wb") as h:
+                    h.write(head)
             writer.write(0, bytes(head))
         else:
             pre = 0

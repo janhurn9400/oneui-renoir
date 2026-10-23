@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Pull system/system_ext/product out of a Samsung firmware zip (samloader download) without unpacking the
 # AP tar or writing the ~14 GB super image: zip -> AP tar -> super.img.lz4 -> lz4 -> tools/sparse_lpextract.py.
-# Runs inside the VM: tools/vm.sh < scripts/extract_firmware.sh
+# Runs as root on Linux (scripts/prepare_inputs.sh calls it; on the Mac: tools/vm.sh < scripts/extract_firmware.sh)
 # Env: FW=<zip> (default: the only *_fac.zip in work/dl), OUT=<dir> (default work/fw), PARTS="system system_ext product"
 set -euo pipefail
-P=${P:-/media/psf/Home/Desktop/oneui-renoir}
+P=${P:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 FW=${FW:-$(ls $P/work/dl/*_fac.zip)}
 OUT=${OUT:-$P/work/fw}
 PARTS=${PARTS:-system system_ext product}
