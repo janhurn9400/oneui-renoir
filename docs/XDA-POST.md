@@ -3,12 +3,20 @@
 
 # [ROM][PORT][16] One UI 8.0 for Mi 11 Lite 5G (renoir)
 
+<!-- XDA: attach docs/xda/banner.png here (Upload > insert "Full image") -->
+[banner.png]
+
 Samsung's **One UI 8.0** (Galaxy S23 firmware, Android 16) running on the Mi 11 Lite 5G, on renoir's own MIUI
 vendor. SELinux enforcing.
 
 Download the zip, run `flash_all.bat` (Windows) or `flash_all.sh` (Linux/macOS) from fastboot, done.
 Everything is **open source**: the GitHub repository has every script and fix that went into the zip, so you can
 check what's inside – or build the same images yourself from the official firmware.
+
+## Screenshots
+
+<!-- XDA: attach docs/xda/screenshots.png here, ideally inside a [SPOILER="Screenshots"] block -->
+[screenshots.png]
 
 ## What works
 
