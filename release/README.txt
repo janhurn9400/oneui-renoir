@@ -13,8 +13,12 @@ FLASHING ERASES ALL DATA ON THE PHONE.
 Before you start
 ----------------
 1. Unlocked bootloader.
-2. Stock MIUI V14.0.7.0.TKIMIXM (Global) flashed with Xiaomi's flash_all first. This ROM keeps renoir's firmware,
-   boot, dtbo and modem from it.
+2. Stock MIUI V14.0.7.0.TKIMIXM (Global), exactly this version: this ROM keeps renoir's kernel, dtbo and firmware
+   (modem, audio, camera) from it. Official download (6.3 GB):
+   https://bigota.d.miui.com/V14.0.7.0.TKIMIXM/renoir_global_images_V14.0.7.0.TKIMIXM_20231222.0000.00_13.0_global_e21e2a7d85.tgz
+   Unpack it and run its flash_all.bat / flash_all.sh from fastboot (or MiFlash "clean all").
+   Do NOT use flash_all_lock / "clean all and lock": it relocks the bootloader.
+   No need to set up MIUI afterwards, go straight back to fastboot.
 3. Android platform-tools (fastboot) installed, or unpacked into a "platform-tools" folder next to this file.
    Windows: Xiaomi/Google USB driver installed.
 
